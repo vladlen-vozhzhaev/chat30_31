@@ -14,9 +14,9 @@ import java.util.Locale;
 * */
 
 public class Server {
+    static ArrayList<User> users = new ArrayList<>();
     public static void main(String[] args) {
         try {
-            ArrayList<User> users = new ArrayList<>();
             ServerSocket serverSocket = new ServerSocket(9743);
             System.out.println("Сервер запущен");
             while (true){
@@ -34,14 +34,18 @@ public class Server {
                             while (true){
                                 String userMessage = currentUser.getIn().readUTF();
                                 System.out.println(userMessage);
-                                for(User user : users){
-                                    System.out.println(user.getName()+", UUID:"+user.getUuid().toString());
-                                    user.getOut().writeUTF(name+": "+userMessage);
-                                }
+                                if (userMessage.equals("/getUsersName")){
+                                    String result = "";
+                                    for (User user : users)
+                                        result += user.getName()+" ";
+                                    currentUser.getOut().writeUTF(result);
+                                }else
+                                    broadCastMessage(currentUser, userMessage);
                             }
                         } catch (IOException e) {
                             System.out.println("Клиент отключился");
                             users.remove(currentUser);
+                            broadCastMessage(currentUser, "покинул чат");
                         }
                     }
                 });
@@ -49,6 +53,17 @@ public class Server {
             }
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    private static void broadCastMessage(User currentUser, String message){
+        for(User user : users){
+            if(user.getUuid().toString().equals(currentUser.getUuid().toString())) continue;
+            try {
+                user.getOut().writeUTF(currentUser.getName()+": "+message);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 }
