@@ -1,8 +1,7 @@
 package server;
 // 30-31
 /*
-* Если пользователь приложения уже авторизовывался, то при запуске приложения, не требовать авторизацию
-*
+* Реализовать вывод сообшений из базы данных в TextArea
 * */
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
@@ -18,6 +17,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.UUID;
 
 /*
 *  После подключения клиента сервер запрашивает имя
@@ -50,15 +50,27 @@ public class Server {
                                 JSONObject authData = (JSONObject) jsonParser.parse(currentUser.getIn().readUTF());
                                 String login = authData.get("login").toString();
                                 String pass = authData.get("pass").toString();
+                                String clientToken = authData.get("token").toString();
+                                System.out.println(login);
+                                System.out.println(pass);
                                 Connection connection = DriverManager.getConnection(db_url, db_login, db_pass);
                                 Statement statement = connection.createStatement();
-                                ResultSet resultSet = statement.executeQuery("SELECT * FROM users WHERE login='"+login+"' AND pass='"+pass+"'");
+                                ResultSet resultSet;
+                                if(clientToken.equals(""))
+                                    resultSet = statement.executeQuery("SELECT * FROM users WHERE login='"+login+"' AND pass='"+pass+"'");
+                                else
+                                    resultSet = statement.executeQuery("SELECT * FROM users WHERE token='"+clientToken+"'");
+                                JSONObject jsonObject = new JSONObject();
                                 if (resultSet.next()){
+                                    String token = UUID.randomUUID().toString();
+                                    int userId = resultSet.getInt("id");
+                                    currentUser.setId(userId);
                                     currentUser.setName(resultSet.getString("name"));
+                                    statement.executeUpdate("UPDATE `users` SET token='"+token+"' WHERE id="+userId);
+                                    jsonObject.put("token", token);
                                     result = "success";
                                     isAuth = true;
                                 }
-                                JSONObject jsonObject = new JSONObject();
                                 jsonObject.put("authResult", result);
                                 currentUser.getOut().writeUTF(jsonObject.toJSONString());
                             }
@@ -71,10 +83,16 @@ public class Server {
                                     for (User user : users)
                                         result += user.getName()+" ";
                                     currentUser.getOut().writeUTF(result);
-                                }else
+                                }else{
                                     broadCastMessage(currentUser, userMessage);
+                                    Connection connection = DriverManager.getConnection(db_url, db_login, db_pass);
+                                    Statement statement = connection.createStatement();
+                                    statement.executeUpdate("INSERT INTO `messages`(`from_id`, `text`) VALUES ('"+currentUser.getId()+"', '"+userMessage+"')");
+                                    statement.close();
+                                }
                             }
                         } catch (Exception e) {
+                            e.printStackTrace();
                             System.out.println("Клиент отключился");
                             users.remove(currentUser);
                             sendOnlineUsers();

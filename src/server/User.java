@@ -12,6 +12,7 @@ public class User {
     private DataOutputStream out;
     private DataInputStream in;
     private UUID uuid;
+    private int id;
     public User(Socket socket) throws IOException {
         this.socket = socket;
         this.out = new DataOutputStream(this.socket.getOutputStream());
@@ -23,4 +24,12 @@ public class User {
     public DataOutputStream getOut() {return out;}
     public DataInputStream getIn() {return in;}
     public UUID getUuid() {return uuid;}
+
+    public int getId() {
+        return id;
+    }
+
+    public void setId(int id) {
+        this.id = id;
+    }
 }
