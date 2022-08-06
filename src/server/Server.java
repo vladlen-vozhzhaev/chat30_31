@@ -6,29 +6,20 @@ package server;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
-import org.w3c.dom.ls.LSOutput;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.ResultSet;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.UUID;
-
-/*
-*  После подключения клиента сервер запрашивает имя
-*  В дальнейшем все сообщения будут отправляться в формате Имя: сообщение
-* */
 
 public class Server {
     static ArrayList<User> users = new ArrayList<>();
     static String db_url = "jdbc:mysql://127.0.0.1/chat_30_31";
     static String db_login = "root";
     static String db_pass = "";
+    static Connection connection;
     public static void main(String[] args) {
         try {
             ServerSocket serverSocket = new ServerSocket(9743);
@@ -53,7 +44,7 @@ public class Server {
                                 String clientToken = authData.get("token").toString();
                                 System.out.println(login);
                                 System.out.println(pass);
-                                Connection connection = DriverManager.getConnection(db_url, db_login, db_pass);
+                                connection = DriverManager.getConnection(db_url, db_login, db_pass);
                                 Statement statement = connection.createStatement();
                                 ResultSet resultSet;
                                 if(clientToken.equals(""))
@@ -75,6 +66,7 @@ public class Server {
                                 currentUser.getOut().writeUTF(jsonObject.toJSONString());
                             }
                             sendOnlineUsers();
+                            sendHistoryChat(currentUser);
                             while (true){
                                 String userMessage = currentUser.getIn().readUTF();
                                 System.out.println(userMessage);
@@ -84,7 +76,20 @@ public class Server {
                                         result += user.getName()+" ";
                                     currentUser.getOut().writeUTF(result);
                                 }else{
-                                    broadCastMessage(currentUser, userMessage);
+                                    JSONObject msg = (JSONObject) jsonParser.parse(userMessage);
+                                    String text = msg.get("msg").toString();
+                                    int toUser = Integer.parseInt(msg.get("to_user").toString());
+                                    if(toUser == 0)
+                                        broadCastMessage(currentUser, userMessage);
+                                    else{
+                                        for (User user:users) {
+                                            if(user.getId() == toUser){
+                                                user.getOut().writeUTF(msg.toJSONString());
+                                                break;
+                                            }
+                                        }
+                                        continue;
+                                    }
                                     Connection connection = DriverManager.getConnection(db_url, db_login, db_pass);
                                     Statement statement = connection.createStatement();
                                     statement.executeUpdate("INSERT INTO `messages`(`from_id`, `text`) VALUES ('"+currentUser.getId()+"', '"+userMessage+"')");
@@ -125,17 +130,45 @@ public class Server {
     }
 
     private static void sendOnlineUsers() {
-        ArrayList<String> usersName = new ArrayList<>();
+        JSONArray usersList = new JSONArray();
         try {
             for (User user : users){
-                usersName.add(user.getName());
+                JSONObject jsonUserInfo = new JSONObject();
+                jsonUserInfo.put("name", user.getName());
+                jsonUserInfo.put("user_id", user.getId());
+                usersList.add(jsonUserInfo);
             }
-            String resultJSON = JSONArray.toJSONString(usersName);
             JSONObject jsonObject = new JSONObject();
-            jsonObject.put("users", resultJSON);
+            jsonObject.put("users", usersList);
             sendJSON(jsonObject.toJSONString());
         }catch (IOException e){
             e.printStackTrace();
         }
+    }
+    private static void sendHistoryChat(User user) throws Exception {
+        Statement statement = connection.createStatement();
+        ResultSet resultSet = statement.executeQuery("SELECT users.id, users.name, messages.text FROM `messages`, `users` WHERE users.id = messages.from_id");
+        /*
+        * SELECT - выбрать
+        * users.id - столбец id из таблицы users
+        * users.name - столбец name из таблицы users
+        * messages.text - столбец text из таблицы message
+        * FROM - из таблиц(ы)
+        * `messages`, `users` - перечисляем таблицы из которых выбираем данные
+        * WHERE - где (это условие выбора)
+        * users.id = messages.from_id - выбираем так, чтобы отправитель был равен пользователю
+        * Всё это мы делаем для того, чтобы иметь не только сообщение, но и информацию об отправителе
+        */
+        JSONObject jsonObject = new JSONObject();
+        JSONArray messages = new JSONArray(); // JSON список сообщений
+        while (resultSet.next()){
+            JSONObject message = new JSONObject(); // JSON объект сообщения
+            message.put("name", resultSet.getString("name"));
+            message.put("text", resultSet.getString("text"));
+            message.put("user_id", resultSet.getInt("id"));
+            messages.add(message);
+        }
+        jsonObject.put("messages", messages);
+        user.getOut().writeUTF(jsonObject.toJSONString());
     }
 }
