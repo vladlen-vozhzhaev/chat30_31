@@ -59,6 +59,7 @@ public class Server {
                                     currentUser.setName(resultSet.getString("name"));
                                     statement.executeUpdate("UPDATE `users` SET token='"+token+"' WHERE id="+userId);
                                     jsonObject.put("token", token);
+                                    jsonObject.put("id", userId);
                                     result = "success";
                                     isAuth = true;
                                 }
@@ -68,19 +69,42 @@ public class Server {
                             sendOnlineUsers();
                             sendHistoryChat(currentUser);
                             while (true){
+                                Connection connection = DriverManager.getConnection(db_url, db_login, db_pass);
                                 String userMessage = currentUser.getIn().readUTF();
                                 System.out.println(userMessage);
+                                JSONObject request = null;
                                 if (userMessage.equals("/getUsersName")){
                                     String result = "";
                                     for (User user : users)
                                         result += user.getName()+" ";
                                     currentUser.getOut().writeUTF(result);
+                                }else if((request = (JSONObject)jsonParser.parse(userMessage)).get("getMessageToUser")!=null){
+                                    int privateToUser = Integer.parseInt(request.get("getMessageToUser").toString());
+                                    Statement statement = connection.createStatement();
+                                    ResultSet resultSet = statement.executeQuery("SELECT * FROM `messages` WHERE `to_id`='"+privateToUser+"'");
+                                    JSONArray privateMessages = new JSONArray();
+                                    while(resultSet.next()){
+                                        // Все переписки кладём в JSONArray
+                                        JSONObject message = new JSONObject();
+                                        message.put("from_id", resultSet.getInt("from_id"));
+                                        message.put("to_id", resultSet.getInt("to_id"));
+                                        message.put("text", resultSet.getString("text"));
+                                        privateMessages.add(message);
+                                    }
+                                    System.out.println(privateMessages.toJSONString());
+                                    JSONObject privateMessagesObject = new JSONObject();
+                                    privateMessagesObject.put("privateMessages", privateMessages);
+                                    currentUser.getOut().writeUTF(privateMessagesObject.toJSONString());
+                                    // На клиенте необходимо перебрать его и вывести в TextArea
+                                }else if((request = (JSONObject) jsonParser.parse(userMessage)).get("getHistoryMessage")!=null){
+                                    sendHistoryChat(currentUser);
                                 }else{
                                     JSONObject msg = (JSONObject) jsonParser.parse(userMessage);
                                     String text = msg.get("msg").toString();
+                                    msg.put("from_id", currentUser.getId());
                                     int toUser = Integer.parseInt(msg.get("to_user").toString());
                                     if(toUser == 0)
-                                        broadCastMessage(currentUser, userMessage);
+                                        broadCastMessage(currentUser, text);
                                     else{
                                         for (User user:users) {
                                             if(user.getId() == toUser){
@@ -88,11 +112,9 @@ public class Server {
                                                 break;
                                             }
                                         }
-                                        continue;
                                     }
-                                    Connection connection = DriverManager.getConnection(db_url, db_login, db_pass);
                                     Statement statement = connection.createStatement();
-                                    statement.executeUpdate("INSERT INTO `messages`(`from_id`, `text`) VALUES ('"+currentUser.getId()+"', '"+userMessage+"')");
+                                    statement.executeUpdate("INSERT INTO `messages`(`from_id`, `to_id`, `text`) VALUES ('"+currentUser.getId()+"', '"+toUser+"' ,'"+text+"')");
                                     statement.close();
                                 }
                             }
@@ -116,7 +138,11 @@ public class Server {
         for(User user : users){
             if(user.getUuid().toString().equals(currentUser.getUuid().toString())) continue;
             try {
-                user.getOut().writeUTF(currentUser.getName()+": "+message);
+                String text = currentUser.getName()+": "+message;
+                JSONObject jsonObject = new JSONObject();
+                jsonObject.put("msg", text);
+                jsonObject.put("from_id", currentUser.getId());
+                user.getOut().writeUTF(jsonObject.toJSONString());
             } catch (IOException e) {
                 e.printStackTrace();
             }
