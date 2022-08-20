@@ -16,9 +16,9 @@ import java.util.UUID;
 
 public class Server {
     static ArrayList<User> users = new ArrayList<>();
-    static String db_url = "jdbc:mysql://127.0.0.1/chat_30_31";
-    static String db_login = "root";
-    static String db_pass = "";
+    static String db_url = "jdbc:mysql://62.113.98.223:3306/chat_30_31";
+    static String db_login = "monty";
+    static String db_pass = "some_pass";
     static Connection connection;
     public static void main(String[] args) {
         try {
@@ -80,8 +80,9 @@ public class Server {
                                     currentUser.getOut().writeUTF(result);
                                 }else if((request = (JSONObject)jsonParser.parse(userMessage)).get("getMessageToUser")!=null){
                                     int privateToUser = Integer.parseInt(request.get("getMessageToUser").toString());
+                                    int cID = currentUser.getId();
                                     Statement statement = connection.createStatement();
-                                    ResultSet resultSet = statement.executeQuery("SELECT * FROM `messages` WHERE `to_id`='"+privateToUser+"'");
+                                    ResultSet resultSet = statement.executeQuery("SELECT * FROM `messages` WHERE (`to_id`="+privateToUser+" AND `from_id`="+cID+") OR (`to_id`="+cID+" AND `from_id`="+privateToUser+")");
                                     JSONArray privateMessages = new JSONArray();
                                     while(resultSet.next()){
                                         // Все переписки кладём в JSONArray
@@ -173,7 +174,7 @@ public class Server {
     }
     private static void sendHistoryChat(User user) throws Exception {
         Statement statement = connection.createStatement();
-        ResultSet resultSet = statement.executeQuery("SELECT users.id, users.name, messages.text FROM `messages`, `users` WHERE users.id = messages.from_id");
+        ResultSet resultSet = statement.executeQuery("SELECT users.id, users.name, messages.text FROM `messages`, `users` WHERE users.id = messages.from_id AND to_id=0");
         /*
         * SELECT - выбрать
         * users.id - столбец id из таблицы users
